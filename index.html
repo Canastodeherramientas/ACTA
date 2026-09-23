@@ -415,9 +415,9 @@
     </div>
 
     <div class="acciones" style="margin:15px 0 5px 0;">
-      <button onclick="guardarEnGitHub()">Guardar acta en GitHub</button>
-      <button class="small" onclick="cargarActasGitHub()">📂 Ver actas guardadas</button>
-      <button class="small" onclick="limpiarRutaActaActual()">Nueva acta</button>
+      <button type="button" id="btnGuardarGitHub">Guardar acta en GitHub</button>
+      <button type="button" class="small" id="btnVerActas">📂 Ver actas guardadas</button>
+      <button type="button" class="small" id="btnNuevaActa">Nueva acta</button>
     </div>
     <div id="githubStatus" class="github-status info"></div>
 
@@ -898,9 +898,9 @@ ${actaHtml}
       return `<div class="acta-row">
         <div class="acta-info"><div class="acta-name">${escapeHtml(a.name.replace(/\.html$/i, ""))}</div><div class="acta-meta">${fecha ? "Fecha: " + fecha + " · " : ""}Archivo HTML</div></div>
         <div class="acta-actions">
-          <button class="small" onclick="verActaGitHub(${JSON.stringify(a.path)})">👁️ Ver</button>
-          <button class="small" onclick="editarActaGitHub(${JSON.stringify(a.path)})">✏️ Editar</button>
-          <button class="small" onclick="descargarActaGitHub(${JSON.stringify(a.path)})">📥 Descargar</button>
+          <button type="button" class="small" data-action="ver" data-path="${escapeHtml(a.path)}">👁️ Ver</button>
+          <button type="button" class="small" data-action="editar" data-path="${escapeHtml(a.path)}">✏️ Editar</button>
+          <button type="button" class="small" data-action="descargar" data-path="${escapeHtml(a.path)}">📥 Descargar</button>
         </div>
       </div>`;
     }).join("");
@@ -915,15 +915,22 @@ ${actaHtml}
   }
 
   async function verActaGitHub(path) {
+    const ventana = window.open("about:blank", "_blank");
     try {
       setGithubStatus("Abriendo acta...", "info");
       const { html } = await obtenerArchivoGitHub(path);
       const blob = new Blob([html], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      if (ventana) {
+        ventana.location.href = url;
+      } else {
+        const a = document.createElement("a");
+        a.href = url; a.target = "_blank"; a.rel = "noopener"; a.click();
+      }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       setGithubStatus(`✓ Acta abierta: ${path}`, "ok");
     } catch (error) {
+      if (ventana) ventana.close();
       setGithubStatus(`No se pudo abrir el acta. ${error.message}`, "error");
     }
   }
@@ -992,10 +999,38 @@ ${actaHtml}
     githubCurrentPath = "";
   }
 
+  // ===== EVENTOS DE GITHUB =====
+  function iniciarEventosGitHub() {
+    const guardar = document.getElementById("btnGuardarGitHub");
+    const ver = document.getElementById("btnVerActas");
+    const nueva = document.getElementById("btnNuevaActa");
+    if (guardar) guardar.addEventListener("click", () => guardarEnGitHub());
+    if (ver) ver.addEventListener("click", () => cargarActasGitHub());
+    if (nueva) nueva.addEventListener("click", () => limpiarRutaActaActual());
+
+    const lista = document.getElementById("listaActasGitHub");
+    if (lista) lista.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-action]");
+      if (!btn) return;
+      const path = btn.getAttribute("data-path");
+      const action = btn.getAttribute("data-action");
+      if (action === "ver") verActaGitHub(path);
+      if (action === "editar") editarActaGitHub(path);
+      if (action === "descargar") descargarActaGitHub(path);
+    });
+  }
+
+  window.addEventListener("error", (e) => {
+    const msg = e && e.message ? e.message : "Error inesperado de JavaScript.";
+    const el = document.getElementById("githubStatus");
+    if (el) setGithubStatus("Error de la herramienta: " + msg, "error");
+  });
+
   // ===== INICIALIZACIÓN =====
   agregarPuntoAgenda();
   agregarParticipante();
   agregarAcuerdo();
+  iniciarEventosGitHub();
   // Auto-resize inicial de todos los textareas
   window.addEventListener("load", autoResizeAll);
 </script>
