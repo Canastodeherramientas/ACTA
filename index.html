@@ -216,6 +216,42 @@
     font-style: italic;
   }
 
+  /* ===== GITHUB / ARCHIVO DE ACTAS ===== */
+  .github-panel {
+    margin: 25px 0;
+    padding: 18px;
+    background: #f8fbfd;
+    border: 1px solid #d9e2e8;
+    border-radius: 8px;
+  }
+  .github-panel h3 { margin: 0 0 8px 0; color: #2c3e50; }
+  .github-grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 10px 14px; }
+  .github-grid .full { grid-column: 1 / -1; }
+  .github-status { margin-top: 10px; font-size: 0.9em; }
+  .github-status.ok { color: #20744a; }
+  .github-status.error { color: #b42318; }
+  .github-status.info { color: #475467; }
+  .actas-lista { margin-top: 15px; }
+  .acta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid #e0e4e8;
+  }
+  .acta-info { min-width: 0; flex: 1; }
+  .acta-name { font-weight: 600; color: #2c3e50; word-break: break-word; }
+  .acta-meta { font-size: 0.82em; color: #7f8c8d; margin-top: 2px; }
+  .acta-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .github-search { margin-top: 12px; }
+  @media (max-width: 700px) {
+    .github-grid { grid-template-columns: 1fr; }
+    .github-grid .full { grid-column: auto; }
+    .acta-row { align-items: flex-start; flex-direction: column; }
+  }
+
+
   /* Impresión: mostrar todo el contenido */
   @media print {
     body { background: #fff; padding: 0; }
@@ -227,13 +263,6 @@
       height: auto !important;
     }
   }
-
-  .github-panel{margin-top:18px;padding:14px;background:#f8fbfd;border:1px solid #d9e2e8;border-radius:8px}
-  .github-panel h3{margin:0 0 8px;font-size:1em;color:#2c3e50}
-  .github-panel .hint{margin-bottom:10px}
-  .github-status{margin-top:10px;font-size:.9em;white-space:pre-wrap}
-  .github-warning{color:#8a4b08;background:#fff7e6;border-left:3px solid #f39c12;padding:8px 10px;margin-top:8px;font-size:.85em}
-
 </style>
 </head>
 <body>
@@ -354,22 +383,51 @@
     <button class="small" onclick="limpiarTodo()" style="background:#e74c3c;color:#fff;">Limpiar</button>
   </div>
 
+
+
+  <!-- GITHUB / ARCHIVO DE ACTAS -->
   <div class="github-panel">
-    <h3>Guardar acta en GitHub</h3>
-    <p class="hint">Guarda una copia HTML del acta directamente en un repositorio de GitHub.</p>
-    <div class="row">
-      <div><label>Propietario / usuario de GitHub</label><input type="text" id="githubOwner" placeholder="ej. luisenrique"></div>
-      <div><label>Repositorio</label><input type="text" id="githubRepo" placeholder="ej. actas-lanpawanka"></div>
+    <h3>Archivo de actas en GitHub</h3>
+    <p class="hint">Guarde las actas en su repositorio y consulte las actas existentes desde esta misma herramienta.</p>
+
+    <div class="github-grid">
+      <div>
+        <label>GitHub Owner</label>
+        <input type="text" id="githubOwner" value="Canastodeherramientas">
+      </div>
+      <div>
+        <label>Repository</label>
+        <input type="text" id="githubRepo" value="ACTA">
+      </div>
+      <div>
+        <label>Folder</label>
+        <input type="text" id="githubFolder" value="actas">
+      </div>
+      <div>
+        <label>Branch</label>
+        <input type="text" id="githubBranch" value="main">
+      </div>
+      <div class="full">
+        <label>Personal access token</label>
+        <input type="password" id="githubToken" autocomplete="off" placeholder="Pegue aquí su token; no lo guarde en el código">
+        <div class="hint">El token se usa solo en esta sesión del navegador. No lo comparta ni lo escriba directamente dentro del HTML.</div>
+      </div>
     </div>
-    <div class="row">
-      <div><label>Carpeta</label><input type="text" id="githubFolder" value="actas"></div>
-      <div><label>Rama</label><input type="text" id="githubBranch" value="main"></div>
+
+    <div class="acciones" style="margin:15px 0 5px 0;">
+      <button onclick="guardarEnGitHub()">Guardar acta en GitHub</button>
+      <button class="small" onclick="cargarActasGitHub()">📂 Ver actas guardadas</button>
+      <button class="small" onclick="limpiarRutaActaActual()">Nueva acta</button>
     </div>
-    <label>Token de GitHub</label>
-    <input type="password" id="githubToken" placeholder="github_pat_...">
-    <div class="github-warning">No coloque el token dentro del código HTML. Esta versión lo solicita al guardar y no lo almacena en el archivo.</div>
-    <div class="acciones" style="margin:12px 0 0 0;"><button onclick="guardarEnGitHub()">Guardar acta en GitHub</button></div>
-    <div id="githubStatus" class="github-status"></div>
+    <div id="githubStatus" class="github-status info"></div>
+
+    <div id="actasRepositorio" class="actas-lista" style="display:none;">
+      <div class="github-search">
+        <label>Buscar en las actas</label>
+        <input type="text" id="buscarActas" placeholder="Buscar por organización, reunión o fecha..." oninput="filtrarActasGitHub()">
+      </div>
+      <div id="listaActasGitHub" style="margin-top:10px;"></div>
+    </div>
   </div>
 
   <!-- VISTA DEL ACTA -->
@@ -651,109 +709,277 @@
   }
 
 
-  function githubConfig(){
+
+  // ===== GITHUB: ARCHIVO DE ACTAS =====
+  let githubCurrentPath = "";
+  let githubActasCache = [];
+
+  function githubConfig() {
     return {
-      owner: val("githubOwner"),
-      repo: val("githubRepo"),
-      folder: val("githubFolder") || "actas",
-      branch: val("githubBranch") || "main",
+      owner: document.getElementById("githubOwner").value.trim(),
+      repo: document.getElementById("githubRepo").value.trim(),
+      folder: document.getElementById("githubFolder").value.trim().replace(/^\/+|\/+$/g, ""),
+      branch: document.getElementById("githubBranch").value.trim() || "main",
       token: document.getElementById("githubToken").value.trim()
     };
   }
 
-  function slugify(texto){
-    return String(texto || "acta")
-      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-      .replace(/[^a-zA-Z0-9]+/g,"-").replace(/^-+|-+$/g,"")
-      .toLowerCase().slice(0,80) || "acta";
+  function setGithubStatus(message, type="info") {
+    const el = document.getElementById("githubStatus");
+    el.className = "github-status " + type;
+    el.textContent = message;
   }
 
-  function bytesToBase64Utf8(texto){
-    const bytes = new TextEncoder().encode(texto);
+  function slugify(text) {
+    return String(text || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase().replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "").slice(0, 80);
+  }
+
+  function bytesToBase64Utf8(text) {
+    const bytes = new TextEncoder().encode(text);
     let binary = "";
-    for(let i=0;i<bytes.length;i+=0x8000){
-      binary += String.fromCharCode(...bytes.subarray(i,i+0x8000));
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
     }
     return btoa(binary);
   }
 
-  function obtenerHtmlActa(){
+  function base64ToUtf8(base64) {
+    const binary = atob(base64.replace(/\n/g, ""));
+    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  }
+
+  function getActaState() {
+    return {
+      organizacion: val("organizacion"),
+      nombreReunion: val("nombreReunion"),
+      fecha: val("fecha"),
+      horaInicio: val("horaInicio"),
+      horaFin: val("horaFin"),
+      lugar: val("lugar"),
+      facilita: val("facilita"),
+      relator: val("relator"),
+      objetivo: val("objetivo"),
+      puntosAgenda: puntosAgenda.slice(),
+      agendaLibre: val("agendaLibre"),
+      participantes: JSON.parse(JSON.stringify(participantes)),
+      desarrolloPuntos: desarrolloPuntos.slice(),
+      desarrolloLibre: val("desarrolloLibre"),
+      acuerdos: JSON.parse(JSON.stringify(acuerdos)),
+      pendientes: val("pendientes"),
+      proximaFecha: val("proximaFecha"),
+      proximaHora: val("proximaHora"),
+      proximaLugar: val("proximaLugar"),
+      observaciones: val("observaciones")
+    };
+  }
+
+  function obtenerHtmlActa() {
     actualizarActa();
-    const vista = document.getElementById("vistaActa").cloneNode(true);
+    const actaHtml = document.getElementById("vistaActa").innerHTML;
+    const stateJson = JSON.stringify(getActaState()).replace(new RegExp("<" + "/script", "gi"), "<\\/script");
+    const titulo = escapeHtml(val("nombreReunion") || "Acta de reunión");
+    const org = escapeHtml(val("organizacion") || "");
     return `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
-<title>${escapeHtml(val("nombreReunion") || "Acta de reunión")}</title>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${titulo}</title>
 <style>
-body{font-family:Arial,Helvetica,sans-serif;max-width:900px;margin:40px auto;padding:0 25px;line-height:1.6;color:#222}
-h3{margin-top:28px;border-bottom:1px solid #ddd;padding-bottom:6px}
-table{width:100%;border-collapse:collapse;margin:12px 0 22px}
-th,td{border:1px solid #bbb;padding:8px;text-align:left;vertical-align:top}
-th{background:#eee} p{white-space:pre-wrap}
-</style></head><body>
-<h1>Acta de reunión</h1>${vista.innerHTML}
+body{font-family:Arial,sans-serif;max-width:950px;margin:30px auto;padding:0 20px;color:#263238;line-height:1.6;background:#f6f8fa}
+.acta{background:#fff;padding:28px;border:1px solid #e0e4e8;border-radius:8px}
+h1{text-align:center;color:#2c3e50;margin-top:0}h2{color:#34495e;border-left:4px solid #3498db;padding-left:10px}
+h3{color:#2c3e50;border-bottom:1px solid #e0e4e8;padding-bottom:4px}
+table{width:100%;border-collapse:collapse;margin:10px 0}th,td{border:1px solid #d0d7de;padding:7px 10px;text-align:left}th{background:#eef2f5}p{white-space:pre-wrap}
+.meta{text-align:center;color:#667085;font-size:.9em;margin-bottom:20px}
+</style>
+</head>
+<body><div class="acta">
+<h1>Acta de reunión</h1><div class="meta">${org}</div>
+${actaHtml}
+</div>
+<script type="application/json" id="actaData">${stateJson}${"<" + "/script>"}
 </body></html>`;
   }
 
-  async function guardarEnGitHub(){
-    const cfg = githubConfig();
-    const status = document.getElementById("githubStatus");
+  function githubApiUrl(path="") {
+    const c = githubConfig();
+    const safePath = path.split("/").map(encodeURIComponent).join("/");
+    return `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/${safePath}`;
+  }
 
-    if(!cfg.owner || !cfg.repo || !cfg.token){
-      status.textContent="Complete usuario/propietario, repositorio y token de GitHub.";
-      status.style.color="#c0392b";
+  function githubHeaders(c) {
+    return {
+      "Accept": "application/vnd.github+json",
+      "Authorization": `Bearer ${c.token}`,
+      "X-GitHub-Api-Version": "2022-11-28"
+    };
+  }
+
+  async function guardarEnGitHub() {
+    const c = githubConfig();
+    if (!c.owner || !c.repo || !c.folder || !c.token) {
+      setGithubStatus("Complete Owner, Repository, Folder y token.", "error");
+      return;
+    }
+    if (!val("organizacion") || !val("nombreReunion") || !val("fecha")) {
+      setGithubStatus("Para guardar, complete al menos organización, nombre de la reunión y fecha.", "error");
       return;
     }
 
-    const nombreReunion=val("nombreReunion") || "acta";
-    const fecha=val("fecha") || new Date().toISOString().slice(0,10);
-    const organizacion=val("organizacion") || "organizacion";
-    const nombreArchivo=`${slugify(organizacion)}-${fecha}-${slugify(nombreReunion)}.html`;
-    const carpeta=cfg.folder.replace(/^\/+|\/+$/g,"");
-    const ruta=`${carpeta}/${nombreArchivo}`;
-    const apiUrl=`https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${ruta}`;
+    const path = githubCurrentPath || `${c.folder}/${slugify(val("organizacion"))}-${val("fecha")}-${slugify(val("nombreReunion"))}.html`;
+    const url = githubApiUrl(path);
+    const html = obtenerHtmlActa();
+    const body = { message: `Guardar acta: ${val("nombreReunion")}`, content: bytesToBase64Utf8(html), branch: c.branch };
 
-    status.textContent="Guardando acta en GitHub...";
-    status.style.color="#2c3e50";
-
-    try{
-      const headers={
-        "Accept":"application/vnd.github+json",
-        "Authorization":`Bearer ${cfg.token}`,
-        "X-GitHub-Api-Version":"2022-11-28"
-      };
-
-      let sha=null;
-      const consulta=await fetch(`${apiUrl}?ref=${encodeURIComponent(cfg.branch)}`,{headers});
-
-      if(consulta.ok){
-        sha=(await consulta.json()).sha;
-      }else if(consulta.status!==404){
-        const e=await consulta.json().catch(()=>({}));
-        throw new Error(e.message || `GitHub respondió con ${consulta.status}.`);
+    try {
+      setGithubStatus("Guardando acta en GitHub...", "info");
+      const existing = await fetch(`${url}?ref=${encodeURIComponent(c.branch)}`, { headers: githubHeaders(c) });
+      if (existing.ok) {
+        const data = await existing.json();
+        body.sha = data.sha;
+      } else if (existing.status !== 404) {
+        const err = await existing.json().catch(() => ({}));
+        throw new Error(err.message || `No se pudo consultar el archivo (${existing.status}).`);
       }
 
-      const payload={
-        message:`${sha ? "Actualizar" : "Crear"} acta: ${nombreArchivo}`,
-        content:bytesToBase64Utf8(obtenerHtmlActa()),
-        branch:cfg.branch
-      };
-      if(sha) payload.sha=sha;
-
-      const respuesta=await fetch(apiUrl,{
-        method:"PUT",
-        headers:{...headers,"Content-Type":"application/json"},
-        body:JSON.stringify(payload)
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: { ...githubHeaders(c), "Content-Type": "application/json" },
+        body: JSON.stringify(body)
       });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.message || `GitHub respondió ${response.status}.`);
 
-      const resultado=await respuesta.json().catch(()=>({}));
-      if(!respuesta.ok) throw new Error(resultado.message || `GitHub respondió con ${respuesta.status}.`);
-
-      status.textContent=`✓ Acta guardada correctamente.\nRuta: ${ruta}`;
-      status.style.color="#18794e";
-    }catch(error){
-      status.textContent=`No se pudo guardar el acta.\n${error.message}`;
-      status.style.color="#c0392b";
+      githubCurrentPath = path;
+      setGithubStatus(`✓ Acta guardada correctamente. Ruta: ${path}`, "ok");
+      cargarActasGitHub(true);
+    } catch (error) {
+      setGithubStatus(`No se pudo guardar el acta. ${error.message}`, "error");
     }
+  }
+
+  async function cargarActasGitHub(silencioso=false) {
+    const c = githubConfig();
+    if (!c.owner || !c.repo || !c.folder || !c.token) {
+      if (!silencioso) setGithubStatus("Complete Owner, Repository, Folder y token.", "error");
+      return;
+    }
+    try {
+      if (!silencioso) setGithubStatus("Consultando actas guardadas...", "info");
+      const url = githubApiUrl(c.folder) + `?ref=${encodeURIComponent(c.branch)}`;
+      const response = await fetch(url, { headers: githubHeaders(c) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || `GitHub respondió ${response.status}.`);
+      githubActasCache = Array.isArray(data) ? data.filter(x => x.type === "file" && x.name.toLowerCase().endsWith(".html")) : [];
+      document.getElementById("actasRepositorio").style.display = "block";
+      filtrarActasGitHub();
+      setGithubStatus(`✓ ${githubActasCache.length} acta(s) encontrada(s) en ${c.folder}/`, "ok");
+    } catch (error) {
+      if (!silencioso) setGithubStatus(`No se pudieron consultar las actas. ${error.message}`, "error");
+    }
+  }
+
+  function filtrarActasGitHub() {
+    const q = (document.getElementById("buscarActas").value || "").toLowerCase().trim();
+    const lista = document.getElementById("listaActasGitHub");
+    const filtradas = githubActasCache.filter(a => a.name.toLowerCase().includes(q));
+    if (!filtradas.length) {
+      lista.innerHTML = `<p class="hint">No hay actas que coincidan con la búsqueda.</p>`;
+      return;
+    }
+    lista.innerHTML = filtradas.map((a) => {
+      const fecha = (a.name.match(/(20\d{2}-\d{2}-\d{2})/) || [])[1] || "";
+      return `<div class="acta-row">
+        <div class="acta-info"><div class="acta-name">${escapeHtml(a.name.replace(/\.html$/i, ""))}</div><div class="acta-meta">${fecha ? "Fecha: " + fecha + " · " : ""}Archivo HTML</div></div>
+        <div class="acta-actions">
+          <button class="small" onclick="verActaGitHub(${JSON.stringify(a.path)})">👁️ Ver</button>
+          <button class="small" onclick="editarActaGitHub(${JSON.stringify(a.path)})">✏️ Editar</button>
+          <button class="small" onclick="descargarActaGitHub(${JSON.stringify(a.path)})">📥 Descargar</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  async function obtenerArchivoGitHub(path) {
+    const c = githubConfig();
+    const response = await fetch(`${githubApiUrl(path)}?ref=${encodeURIComponent(c.branch)}`, { headers: githubHeaders(c) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.message || `GitHub respondió ${response.status}.`);
+    return { data, html: base64ToUtf8(data.content || "") };
+  }
+
+  async function verActaGitHub(path) {
+    try {
+      setGithubStatus("Abriendo acta...", "info");
+      const { html } = await obtenerArchivoGitHub(path);
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setGithubStatus(`✓ Acta abierta: ${path}`, "ok");
+    } catch (error) {
+      setGithubStatus(`No se pudo abrir el acta. ${error.message}`, "error");
+    }
+  }
+
+  async function descargarActaGitHub(path) {
+    try {
+      const { html } = await obtenerArchivoGitHub(path);
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = path.split("/").pop();
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setGithubStatus(`No se pudo descargar el acta. ${error.message}`, "error");
+    }
+  }
+
+  async function editarActaGitHub(path) {
+    try {
+      setGithubStatus("Cargando acta para edición...", "info");
+      const { html } = await obtenerArchivoGitHub(path);
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const dataEl = doc.getElementById("actaData");
+      if (!dataEl) {
+        setGithubStatus("Esta acta fue guardada antes de habilitar la edición. Puede verla o descargarla, pero no se puede cargar automáticamente en el formulario.", "error");
+        return;
+      }
+      const data = JSON.parse(dataEl.textContent);
+      cargarEstadoActa(data);
+      githubCurrentPath = path;
+      actualizarActa();
+      setGithubStatus(`✓ Acta cargada para edición. Al guardar, se actualizará: ${path}`, "ok");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (error) {
+      setGithubStatus(`No se pudo cargar el acta para edición. ${error.message}`, "error");
+    }
+  }
+
+  function cargarEstadoActa(data) {
+    const ids = ["organizacion","nombreReunion","fecha","horaInicio","horaFin","lugar","facilita","relator","objetivo","agendaLibre","desarrolloLibre","pendientes","proximaFecha","proximaHora","proximaLugar","observaciones"];
+    ids.forEach(id => { if (document.getElementById(id)) document.getElementById(id).value = data[id] || ""; });
+    puntosAgenda = Array.isArray(data.puntosAgenda) ? data.puntosAgenda.slice() : [];
+    desarrolloPuntos = Array.isArray(data.desarrolloPuntos) ? data.desarrolloPuntos.slice() : [];
+    participantes = Array.isArray(data.participantes) ? JSON.parse(JSON.stringify(data.participantes)) : [];
+    acuerdos = Array.isArray(data.acuerdos) ? JSON.parse(JSON.stringify(data.acuerdos)) : [];
+    if (!puntosAgenda.length) puntosAgenda.push("");
+    if (!participantes.length) participantes.push({nombre:"",cargo:"",organizacion:""});
+    if (!acuerdos.length) acuerdos.push({que:"",quien:"",cuando:""});
+    renderAgenda(); renderDesarrollo(); renderParticipantes(); renderAcuerdos(); autoResizeAll();
+  }
+
+  function limpiarRutaActaActual() {
+    githubCurrentPath = "";
+    setGithubStatus("Nueva acta: al guardar se creará un archivo nuevo.", "info");
   }
 
   // ===== LIMPIAR =====
@@ -763,6 +989,7 @@ th{background:#eee} p{white-space:pre-wrap}
     puntosAgenda = []; desarrolloPuntos = []; participantes = []; acuerdos = [];
     renderAgenda(); renderDesarrollo(); renderParticipantes(); renderAcuerdos();
     document.getElementById("vistaActa").innerHTML = "— La vista del acta aparecerá aquí —";
+    githubCurrentPath = "";
   }
 
   // ===== INICIALIZACIÓN =====
