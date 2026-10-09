@@ -420,8 +420,8 @@
         <input type="text" id="githubRepo" value="ACTA">
       </div>
       <div>
-        <label>Folder</label>
-        <input type="text" id="githubFolder" value="actas">
+        <label>Carpeta asignada por la contraseña</label>
+        <input type="text" id="githubFolder" value="actas" readonly>
       </div>
       <div>
         <label>Branch</label>
@@ -763,8 +763,10 @@
       githubAccessKey = claveIngresada;
       githubUnlocked = true;
       if (msg) msg.textContent = "";
+      // El Worker devuelve la carpeta asignada a esta contraseña.
+      if (data.folder) document.getElementById("githubFolder").value = data.folder;
       mostrarFuncionesGitHub();
-      githubActasCache = Array.isArray(data) ? data : [];
+      githubActasCache = Array.isArray(data) ? data : (Array.isArray(data.files) ? data.files : []);
       document.getElementById("actasRepositorio").style.display = "block";
       filtrarActasGitHub();
       setGithubStatus(`Acceso habilitado. ${githubActasCache.length} acta(s) encontrada(s).`, "ok");
@@ -921,7 +923,9 @@ ${actaHtml}
       const response = await fetch(WORKER_API_BASE, { headers: workerHeaders(), cache: "no-store" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || `El servicio respondió ${response.status}.`);
-      githubActasCache = Array.isArray(data) ? data : [];
+      // La respuesta incluye folder y files; actualizar el campo para reflejar el acceso real.
+      if (data.folder) document.getElementById("githubFolder").value = data.folder;
+      githubActasCache = Array.isArray(data) ? data : (Array.isArray(data.files) ? data.files : []);
       document.getElementById("actasRepositorio").style.display = "block";
       filtrarActasGitHub();
       setGithubStatus(`✓ ${githubActasCache.length} acta(s) encontrada(s) en ${githubConfig().folder}/`, "ok");
