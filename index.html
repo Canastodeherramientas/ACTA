@@ -725,13 +725,10 @@
 
 
 
-  // ===== GITHUB: ARCHIVO DE ACTAS =====
-  // IMPORTANTE: el HTML se publica en un repositorio público. Estos valores serán visibles
-  // para cualquiera que inspeccione el código. Use un token fine-grained limitado al
-  // repositorio Canastodeherramientas/ACTA y solo con permiso Contents: Read and write.
-  // Cambie los dos marcadores antes de publicar este archivo.
-  const GITHUB_TOKEN = "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";
-  const CLAVE_ACCESO = "MAYANGNA";
+  // ===== GITHUB: ARCHIVO DE ACTAS A TRAVÉS DE CLOUDFLARE WORKER =====
+  // El token de GitHub permanece como secreto en Cloudflare, nunca en este HTML público.
+  const WORKER_API_BASE = "https://actas-github.luenrave2000.workers.dev/api/actas";
+  let githubAccessKey = "";
   let githubUnlocked = false;
   let githubCurrentPath = "";
   let githubActasCache = [];
@@ -746,21 +743,41 @@
     setGithubStatus("Acceso habilitado. Puede consultar o guardar actas.", "info");
   }
 
-  function desbloquearArchivoActas() {
+  async function desbloquearArchivoActas() {
     const input = document.getElementById("githubAccessPassword");
     const msg = document.getElementById("githubAccessMessage");
     const claveIngresada = input ? input.value : "";
-    if (claveIngresada && claveIngresada === CLAVE_ACCESO) {
+    if (!claveIngresada) {
+      if (msg) msg.textContent = "Introduzca la clave de acceso.";
+      return;
+    }
+    try {
+      if (msg) msg.textContent = "Verificando clave...";
+      const response = await fetch(WORKER_API_BASE, {
+        method: "GET",
+        headers: { "X-Access-Key": claveIngresada, "Accept": "application/json" },
+        cache: "no-store"
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "La clave no es correcta.");
+      githubAccessKey = claveIngresada;
       githubUnlocked = true;
+      if (msg) msg.textContent = "";
       mostrarFuncionesGitHub();
-    } else {
-      if (msg) msg.textContent = "La clave no es correcta. Verifique e inténtelo de nuevo.";
+      githubActasCache = Array.isArray(data) ? data : [];
+      document.getElementById("actasRepositorio").style.display = "block";
+      filtrarActasGitHub();
+      setGithubStatus(`Acceso habilitado. ${githubActasCache.length} acta(s) encontrada(s).`, "ok");
+    } catch (error) {
+      githubAccessKey = "";
+      githubUnlocked = false;
+      if (msg) msg.textContent = error.message || "No se pudo verificar la clave.";
       if (input) { input.value = ""; input.focus(); }
     }
   }
 
   function exigirAccesoGitHub() {
-    if (githubUnlocked) return true;
+    if (githubUnlocked && githubAccessKey) return true;
     setGithubStatus("Introduzca la clave de acceso para consultar o guardar actas.", "error");
     return false;
   }
@@ -769,9 +786,8 @@
     return {
       owner: document.getElementById("githubOwner").value.trim(),
       repo: document.getElementById("githubRepo").value.trim(),
-      folder: document.getElementById("githubFolder").value.trim().replace(/^\/+|\/+$/g, ""),
-      branch: document.getElementById("githubBranch").value.trim() || "main",
-      token: GITHUB_TOKEN
+      folder: document.getElementById("githubFolder").value.trim().replace(/^\/+|\/+$/g, "") || "actas",
+      branch: document.getElementById("githubBranch").value.trim() || "main"
     };
   }
 
@@ -864,53 +880,35 @@ ${actaHtml}
     return `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/contents/${safePath}`;
   }
 
-  function githubHeaders(c) {
-    return {
-      "Accept": "application/vnd.github+json",
-      "Authorization": `Bearer ${c.token}`,
-      "X-GitHub-Api-Version": "2022-11-28"
-    };
+  function workerHeaders() {
+    return { "X-Access-Key": githubAccessKey, "Content-Type": "application/json", "Accept": "application/json" };
   }
 
   async function guardarEnGitHub() {
     if (!exigirAccesoGitHub()) return;
     const c = githubConfig();
-    if (!c.owner || !c.repo || !c.folder || !c.token || c.token.includes("PEGA_AQUI_")) {
-      setGithubStatus("Falta configurar el token de GitHub dentro del código HTML.", "error");
+    if (!c.folder) {
+      setGithubStatus("Falta indicar la carpeta de actas.", "error");
       return;
     }
     if (!val("organizacion") || !val("nombreReunion") || !val("fecha")) {
       setGithubStatus("Para guardar, complete al menos organización, nombre de la reunión y fecha.", "error");
       return;
     }
-
     const path = githubCurrentPath || `${c.folder}/${slugify(val("organizacion"))}-${val("fecha")}-${slugify(val("nombreReunion"))}.html`;
-    const url = githubApiUrl(path);
     const html = obtenerHtmlActa();
-    const body = { message: `Guardar acta: ${val("nombreReunion")}`, content: bytesToBase64Utf8(html), branch: c.branch };
-
     try {
       setGithubStatus("Guardando acta en GitHub...", "info");
-      const existing = await fetch(`${url}?ref=${encodeURIComponent(c.branch)}`, { headers: githubHeaders(c) });
-      if (existing.ok) {
-        const data = await existing.json();
-        body.sha = data.sha;
-      } else if (existing.status !== 404) {
-        const err = await existing.json().catch(() => ({}));
-        throw new Error(err.message || `No se pudo consultar el archivo (${existing.status}).`);
-      }
-
-      const response = await fetch(url, {
+      const response = await fetch(WORKER_API_BASE, {
         method: "PUT",
-        headers: { ...githubHeaders(c), "Content-Type": "application/json" },
-        body: JSON.stringify(body)
+        headers: workerHeaders(),
+        body: JSON.stringify({ path, content: html, message: `Guardar acta: ${val("nombreReunion")}` })
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.message || `GitHub respondió ${response.status}.`);
-
-      githubCurrentPath = path;
-      setGithubStatus(`✓ Acta guardada correctamente. Ruta: ${path}`, "ok");
-      cargarActasGitHub(true);
+      if (!response.ok) throw new Error(result.error || `El servicio respondió ${response.status}.`);
+      githubCurrentPath = result.path || path;
+      setGithubStatus(`✓ Acta guardada correctamente. Ruta: ${githubCurrentPath}`, "ok");
+      await cargarActasGitHub(true);
     } catch (error) {
       setGithubStatus(`No se pudo guardar el acta. ${error.message}`, "error");
     }
@@ -918,21 +916,15 @@ ${actaHtml}
 
   async function cargarActasGitHub(silencioso=false) {
     if (!exigirAccesoGitHub()) return;
-    const c = githubConfig();
-    if (!c.owner || !c.repo || !c.folder || !c.token || c.token.includes("PEGA_AQUI_")) {
-      if (!silencioso) setGithubStatus("Falta configurar el token de GitHub dentro del código HTML.", "error");
-      return;
-    }
     try {
       if (!silencioso) setGithubStatus("Consultando actas guardadas...", "info");
-      const url = githubApiUrl(c.folder) + `?ref=${encodeURIComponent(c.branch)}`;
-      const response = await fetch(url, { headers: githubHeaders(c) });
+      const response = await fetch(WORKER_API_BASE, { headers: workerHeaders(), cache: "no-store" });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || `GitHub respondió ${response.status}.`);
-      githubActasCache = Array.isArray(data) ? data.filter(x => x.type === "file" && x.name.toLowerCase().endsWith(".html")) : [];
+      if (!response.ok) throw new Error(data.error || `El servicio respondió ${response.status}.`);
+      githubActasCache = Array.isArray(data) ? data : [];
       document.getElementById("actasRepositorio").style.display = "block";
       filtrarActasGitHub();
-      setGithubStatus(`✓ ${githubActasCache.length} acta(s) encontrada(s) en ${c.folder}/`, "ok");
+      setGithubStatus(`✓ ${githubActasCache.length} acta(s) encontrada(s) en ${githubConfig().folder}/`, "ok");
     } catch (error) {
       if (!silencioso) setGithubStatus(`No se pudieron consultar las actas. ${error.message}`, "error");
     }
@@ -961,11 +953,11 @@ ${actaHtml}
 
   async function obtenerArchivoGitHub(path) {
     if (!exigirAccesoGitHub()) throw new Error("Introduzca la clave de acceso para abrir actas.");
-    const c = githubConfig();
-    if (!c.token || c.token.includes("PEGA_AQUI_")) throw new Error("Falta configurar el token de GitHub dentro del código HTML.");
-    const response = await fetch(`${githubApiUrl(path)}?ref=${encodeURIComponent(c.branch)}`, { headers: githubHeaders(c) });
+    const response = await fetch(`${WORKER_API_BASE}?path=${encodeURIComponent(path)}`, {
+      headers: workerHeaders(), cache: "no-store"
+    });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.message || `GitHub respondió ${response.status}.`);
+    if (!response.ok) throw new Error(data.error || `El servicio respondió ${response.status}.`);
     return { data, html: base64ToUtf8(data.content || "") };
   }
 
